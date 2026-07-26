@@ -1088,10 +1088,9 @@ DEBUG_COMMAND(GCStopFutureRuns) {
     const char *idx = RedisModule_StringPtrLen(argv[2], NULL);
     return RedisModule_ReplyWithErrorFormat(ctx, "%s: %s", QueryError_Strerror(QUERY_ERROR_CODE_NO_INDEX), idx);
   }
-  // Make sure there is no pending timer
-  RedisModule_StopTimer(RSDummyContext, sp->gc->timerID, NULL);
-  // mark as stopped. This will prevent the GC from scheduling itself again if it was already running.
-  sp->gc->timerID = 0;
+  // Make sure there is no pending timer. This also marks the GC as stopped,
+  // preventing it from scheduling itself again if it was already running.
+  GCContext_StopFutureRuns(sp->gc);
   RedisModule_Log(ctx, "verbose", "Stopped GC %p periodic run for index %s", sp->gc, IndexSpec_FormatName(sp, RSGlobalConfig.hideUserDataFromLog));
   return RedisModule_ReplyWithSimpleString(ctx, "OK");
 }
@@ -2321,8 +2320,6 @@ static int parseCompactionSite(const char *name, int *out) {
     *out = SEARCH_DISK_SITE_PRE_CHECKPOINT;
   } else if (!strcasecmp(name, "numeric_split_pre_commit")) {
     *out = SEARCH_DISK_SITE_NUMERIC_SPLIT_PRE_COMMIT;
-  } else if (!strcasecmp(name, "numeric_gate_closed")) {
-    *out = SEARCH_DISK_SITE_NUMERIC_GATE_CLOSED;
   } else {
     return 0;
   }
@@ -2340,7 +2337,7 @@ static int parseCompactionSite(const char *name, int *out) {
  *   RESET                              clear all state, free waiters
  *
  * <site> is one of: compaction_begin, compaction_completed, pre_checkpoint,
- * numeric_split_pre_commit, numeric_gate_closed.
+ * numeric_split_pre_commit.
  */
 DEBUG_COMMAND(replCompactionCoordinator) {
   if (!debugCommandsEnabled(ctx)) {

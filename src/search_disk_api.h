@@ -222,6 +222,28 @@ typedef struct BasicDiskAPI {
   void (*setThrottleCallbacks)(ThrottleCB enable, ThrottleCB disable);
 
   /**
+   * @brief Begin an SST/RDB consistency window.
+   *
+   * Called once before per-index compaction disable hooks. The disk
+   * implementation should publish its consistency-window flag here so active
+   * GC-side split work can defer at safe points before OSS waits for the GC
+   * pool to drain.
+   *
+   * @param disk Pointer to the disk context
+   */
+  void (*beginConsistencyWindow)(RedisSearchDisk *disk);
+
+  /**
+   * @brief End an SST/RDB consistency window.
+   *
+   * Called once before per-index compaction resume hooks. The disk
+   * implementation should clear the consistency-window flag here.
+   *
+   * @param disk Pointer to the disk context
+   */
+  void (*endConsistencyWindow)(RedisSearchDisk *disk);
+
+  /**
    * @brief Load the spec's disk-related RDB data into a temporary in-memory object.
    *
    * Called during RDB load when the IndexSpec cannot be created yet (e.g., during replication
@@ -602,45 +624,27 @@ typedef struct IndexDiskAPI {
   void (*updateMaxOpenFiles)(RedisSearchDiskIndexSpec *index, int maxOpenFiles);
 
   /**
-   * @brief Master-side SST replication PRE_CHECKPOINT hook.
+   * @brief Disable manual compactions for a consistency window.
    *
-   * Called once per index before the replication checkpoint is taken.
-   * Caller holds the IndexSpec read lock for the duration of this call.
-   *
-   * POST_CHECKPOINT has no matching disk hook - OSS handles it on its own.
+   * Called once per index after `beginConsistencyWindow` published the
+   * disk-global consistency flag. The implementation should cancel any
+   * in-flight manual compactions and reject new manual compactions until
+   * `resumeCompactionsAfterConsistency`.
    *
    * @param index Pointer to the disk index spec
    */
-  void (*preCheckpoint)(RedisSearchDiskIndexSpec *index);
+  void (*disableCompactionsForConsistency)(RedisSearchDiskIndexSpec *index);
 
   /**
-   * @brief Master-side SST replication PRE_FORK hook.
+   * @brief Re-enable manual compactions after a consistency window.
    *
-   * Called once per index before the replication snapshot fork.
-   *
-   * @param index Pointer to the disk index spec
-   */
-  void (*preFork)(RedisSearchDiskIndexSpec *index);
-
-  /**
-   * @brief Master-side SST replication POST_FORK hook.
-   *
-   * Called once per index after the snapshot fork.
+   * Called once per index when the consistency window is unwound after a
+   * successful fork/checkpoint cycle or after an abort/failure path. The
+   * implementation should be idempotent.
    *
    * @param index Pointer to the disk index spec
    */
-  void (*postFork)(RedisSearchDiskIndexSpec *index);
-
-  /**
-   * @brief Master-side SST replication ABORT hook.
-   *
-   * Called once per index when the replication cycle is aborted at any point
-   * between PRE_CHECKPOINT and POST_FORK. The disk implementation is free to
-   * undo whatever state it set up in the preceding `pre*` hook.
-   *
-   * @param index Pointer to the disk index spec
-   */
-  void (*replicationAbort)(RedisSearchDiskIndexSpec *index);
+  void (*resumeCompactionsAfterConsistency)(RedisSearchDiskIndexSpec *index);
 
   /**
    * @brief Debug: dump a numeric field's in-memory bucket routing map.

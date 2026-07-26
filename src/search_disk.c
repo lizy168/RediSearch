@@ -605,26 +605,24 @@ void SearchDisk_Flush(RedisSearchDiskIndexSpec* index) {
   disk->index.flush(index);
 }
 
-void SearchDisk_PreCheckpoint(IndexSpec *sp) {
-  RS_ASSERT(disk && sp && sp->diskSpec);
-  // No read/write lock taken from spec. Disabling compaction and calling SearchDisk_PreCheckpoint from main thread
-  // ensures no writes while checkpoint taken.
-  disk->index.preCheckpoint(sp->diskSpec);
+void SearchDisk_BeginConsistencyWindow(void) {
+  RS_ASSERT(disk && disk_db && disk->basic.beginConsistencyWindow);
+  disk->basic.beginConsistencyWindow(disk_db);
 }
 
-void SearchDisk_PreFork(IndexSpec *sp) {
-  RS_ASSERT(disk && sp && sp->diskSpec);
-  disk->index.preFork(sp->diskSpec);
+void SearchDisk_EndConsistencyWindow(void) {
+  RS_ASSERT(disk && disk_db && disk->basic.endConsistencyWindow);
+  disk->basic.endConsistencyWindow(disk_db);
 }
 
-void SearchDisk_PostFork(IndexSpec *sp) {
+void SearchDisk_DisableCompactionsForConsistency(IndexSpec *sp) {
   RS_ASSERT(disk && sp && sp->diskSpec);
-  disk->index.postFork(sp->diskSpec);
+  disk->index.disableCompactionsForConsistency(sp->diskSpec);
 }
 
-void SearchDisk_ReplicationAbort(IndexSpec *sp) {
+void SearchDisk_ResumeCompactionsAfterConsistency(IndexSpec *sp) {
   RS_ASSERT(disk && sp && sp->diskSpec);
-  disk->index.replicationAbort(sp->diskSpec);
+  disk->index.resumeCompactionsAfterConsistency(sp->diskSpec);
 }
 
 void SearchDisk_UpdateBufferBudget(RedisModuleCtx *ctx, int percentage) {

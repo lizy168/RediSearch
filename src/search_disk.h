@@ -864,42 +864,40 @@ uint64_t SearchDisk_GetDiskUsage(RedisSearchDiskIndexSpec* index);
 void SearchDisk_Flush(RedisSearchDiskIndexSpec* index);
 
 /**
- * @brief Master-side SST replication PRE_CHECKPOINT hook for a single index.
+ * @brief Begin an SST/RDB disk consistency window.
  *
- * Acquires the IndexSpec read lock (blocks writes, allows queries) and
- * dispatches to the disk-side preCheckpoint hook.
+ * Dispatches to the disk-global beginConsistencyWindow hook before per-index
+ * compaction disable hooks run.
+ */
+void SearchDisk_BeginConsistencyWindow(void);
+
+/**
+ * @brief End an SST/RDB disk consistency window.
+ *
+ * Dispatches to the disk-global endConsistencyWindow hook before per-index
+ * compaction resume hooks run.
+ */
+void SearchDisk_EndConsistencyWindow(void);
+
+/**
+ * @brief Disable manual compactions for a single index during consistency work.
+ *
+ * Dispatches to the disk-side disableCompactionsForConsistency hook. The
+ * disk-global consistency flag has already been set by
+ * SearchDisk_BeginConsistencyWindow.
  *
  * @param sp Pointer to the IndexSpec (must have a non-NULL diskSpec)
  */
-void SearchDisk_PreCheckpoint(IndexSpec *sp);
+void SearchDisk_DisableCompactionsForConsistency(IndexSpec *sp);
 
 /**
- * @brief Master-side SST replication PRE_FORK hook for a single index.
+ * @brief Re-enable manual compactions for a single index after consistency work.
  *
- * Dispatches to the disk-side preFork hook.
- *
- * @param sp Pointer to the IndexSpec (must have a non-NULL diskSpec)
- */
-void SearchDisk_PreFork(IndexSpec *sp);
-
-/**
- * @brief Master-side SST replication POST_FORK hook for a single index.
- *
- * Dispatches to the disk-side postFork hook.
+ * Dispatches to the disk-side resumeCompactionsAfterConsistency hook.
  *
  * @param sp Pointer to the IndexSpec
  */
-void SearchDisk_PostFork(IndexSpec *sp);
-
-/**
- * @brief Master-side SST replication ABORT hook for a single index.
- *
- * Dispatches to the disk-side replicationAbort hook, then releases whichever
- * subset of locks (fork lock, read lock) is currently held for this cycle.
- *
- * @param sp Pointer to the IndexSpec
- */
-void SearchDisk_ReplicationAbort(IndexSpec *sp);
+void SearchDisk_ResumeCompactionsAfterConsistency(IndexSpec *sp);
 
 /**
  * @brief Update the buffer budget and WBM in response to RAM configuration changes
@@ -940,10 +938,6 @@ typedef enum {
   // A numeric split between its Step B scan and its Step C+D commit (GC
   // thread) — the mid-flight, nothing-committed point.
   SEARCH_DISK_SITE_NUMERIC_SPLIT_PRE_COMMIT = 3,
-  // index_spec_pre_checkpoint right after the consistency gate of the
-  // numeric index closes (main thread); cross-wake source for
-  // deterministically deferring a held split.
-  SEARCH_DISK_SITE_NUMERIC_GATE_CLOSED = 4,
 } SearchDiskCompactionSite;
 
 /**

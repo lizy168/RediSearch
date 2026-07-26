@@ -15,6 +15,7 @@
 #include "redismodule.h"
 #include "util/dllist.h"
 #include "util/references.h"
+#include "util/rs_atomic.h"
 #include <time.h>
 
 #ifdef __cplusplus
@@ -49,6 +50,7 @@ typedef struct GCCallbacks {
 typedef struct GCContext {
   void* gcCtx;
   RedisModuleTimerID timerID;  // Guarded by the GIL
+  RS_Atomic(bool) schedulingPausedForConsistency;
   GCCallbacks callbacks;
 } GCContext;
 
@@ -67,6 +69,9 @@ void GCContext_ForceInvoke(GCContext* gc, RedisModuleBlockedClient* bc);
 void GCContext_ForceBGInvoke(GCContext* gc);
 void GCContext_WaitForAllOperations(RedisModuleBlockedClient* bc);
 void GCContext_GetStats(GCContext* gc, InfoGCStats* out);
+void GCContext_StopFutureRuns(GCContext* gc);
+void GCContext_PauseSchedulingForConsistency(GCContext* gc);
+void GCContext_ResumeSchedulingAfterConsistency(GCContext* gc);
 
 static inline void InfoGCStats_Add(InfoGCStats* dst, const InfoGCStats* src) {
   dst->totalCollectedBytes += src->totalCollectedBytes;
@@ -76,6 +81,9 @@ static inline void InfoGCStats_Add(InfoGCStats* dst, const InfoGCStats* src) {
 
 void GC_ThreadPoolStart();
 void GC_ThreadPoolDestroy();
+void GC_ThreadPoolPauseForConsistency(void);
+void GC_ThreadPoolWaitForPause(void);
+void GC_ThreadPoolResumeAfterConsistency(void);
 
 #ifdef __cplusplus
 }
